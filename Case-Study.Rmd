@@ -1,0 +1,330 @@
+---
+title: "Data Analysis and Visualization in R (IN2339)"
+author: 'Robin Mittas'
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+subtitle: Case Study
+fontsize: 10pt
+---
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+## Load all the needed libraries. No need to include this in your compiled pdf document so we set echo=FALSE
+library(ggplot2)
+library(data.table)
+library(magrittr) # Needed for %>% operator
+library(tidyr)
+require(dplyr) # needed to rename columns
+library(grid) # to put two plots die by side
+
+```
+## Motivation
+Since the financial crisis of 2007-2008, high unemployment rate amongst younger generations is one of the highest concerns. With only 15% of the people under 25 unemployed in 2008, this number rose to 23,6% by 2013 especially disadvantaged countries like Greece and Spain, which were strongly hit by the economic recession. This trend was strongly surpassed by Catalonian regions. This is why we decided to gain a deeper insight on this topic and analyze the given data sets and possibly better understand and detect some interesting factors on the youth employment in Barcelona between 2013-2017.
+
+## Data Preparation
+In this section, we perform the needed data preparation steps for the analysis. Unnecessary chunk codes are omitted in the compiled pdf-file. After loading the files, some column names were renamed for easier joining and further processing.
+```{r, echo=FALSE, results='hide', warning=FALSE}
+## This chunk of code and output do not need to be included in the pdf document so we set echo=FALSE and results='hide'
+## PLS MAKE SURE TO SET THE WORKINGDIRECTORY
+## Load the file(s)
+births  <- fread("./data/births.csv")
+population <- fread("./data/population.csv")
+immigrants <- fread("./data/immigrants_by_nationality.csv")
+immigrants_sex <- fread("./data/immigrants_emigrants_by_sex.csv")
+unemployment <- fread("./data/unemployment.csv")
+life_expect <- fread("./data/life_expectancy.csv")
+
+# Rename some column names (easier for joining and further processing)
+births = rename(births, "district_code"="District Code", "gender"="Gender", "year"="Year")
+unemployment = rename(unemployment, "year" = "Year", "gender"="Gender", "district_code"="District Code")
+population = rename(population, "year"="Year", "gender"="Gender", "age"="Age", "district_code"="District.Code")
+immigrants = rename(immigrants, "year"="Year", "nationality"="Nationality", "district_code"="District Code")
+immigrants_sex = rename(immigrants_sex, "year"="Year", "gender"="Gender", "district_code"="District Code")
+
+# Set all figures to a global size
+knitr::opts_chunk$set(fig.width=6, fig.height=2.4) 
+```
+## Data Analysis
+```{r, include=FALSE, warning=FALSE}
+# Aggregate DATA per District
+unemployment <- unemployment[, .(Number=sum(Number)), by = c("year", "Month", "district_code", "District Name", "gender", "Demand_occupation")]
+
+ggplot(unemployment[Demand_occupation=="Registered unemployed"], aes(gender, Number)) + geom_boxplot() + facet_wrap(~year)
+
+ggplot(unemployment[Demand_occupation=="Registered unemployed", .(Number_Unemployed=sum(Number)), by = c("gender", "year")], aes(gender, Number_Unemployed)) + geom_bar(stat='identity') + facet_wrap(~year) +scale_y_continuous(labels = scales::comma)
+
+# Calculate the difference per year in the gender groups
+
+diff_gender_unemployed_per_year <- unemployment[Demand_occupation=="Registered unemployed", .(aggregated=sum(Number)), by = c("gender", "year")] 
+diff_gender_unemployed_per_year <- dcast(diff_gender_unemployed_per_year, ... ~gender, value.var = "aggregated")
+diff_gender_unemployed_per_year[, diff_gender_groups_female_minus_male := Female-Male]
+diff_gender_unemployed_per_year = rename(diff_gender_unemployed_per_year, "male_unemployed"="Male", "female_unemployed"="Female")
+
+```
+
+
+
+To get a first overview of the number of unemployed citizens in each gender group we have created the following descriptive plot.
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment[Demand_occupation=="Registered unemployed", .(Number_Unemployed=sum(Number)), by = c("gender", "year")], aes(gender, Number_Unemployed)) + geom_bar(stat='identity') + facet_wrap(~year) +scale_y_continuous(labels = scales::comma) +labs( y = "Number Unemployed citizens", title = "1. Distribution of Unemployed citizens over all years") + theme(plot.title = element_text(size=10))
+diff_gender_unemployed_per_year
+```
+
+From the calculated dataset (see under the first plot) we see that in every year, apart of 2013, there are more female citizens registered unemployed. The second plot outlines the distribution of the number of registered unemployed citizens within each district per gender over all available years. We have one data point per district, month, year and gender-group.
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+ggplot(unemployment[Demand_occupation=="Registered unemployed"], aes(factor(district_code), Number, fill=gender)) + geom_boxplot() +
+  labs(x = "District Code", y = "Number Unemployed citizens", title = "2. Distribution of Unemployed citizens within each district") + theme(plot.title = element_text(size=10))
+
+```
+
+From the plot we can see that the most unemployed citizens are living in District 2 (Eixample), 8 (Nou Barris) and 10 (Sant Marta). Let us especially remember district 2.
+
+
+```{r, include=FALSE, warning=FALSE}
+#This is also supported by the difference in the medians of the male and female citizens over all years of unemployed citizens.
+medians_gender <- unemployment[Demand_occupation=="Registered unemployed", median(Number, na.rm = T), by=gender]
+diff_median_gender <- medians_gender[gender=="Female", V1] - medians_gender[gender=="Male", V1]
+diff_median_gender 
+```
+In order to check if there are seasonal effects due to e.g. tourism, we plot the monthly data (for this we created a plot which is not shown in the respective document - see here R Studio). From the plot we can conclude that there is almost no seasonal effect BUT: the data points are per district, let us see how it is for complete Barcelona and what kind of effect it might have. 
+We will consider each year independently as the number of unemployed citizens should also decrease over the years.
+
+```{r, include=FALSE, warning=FALSE}
+ggplot(unemployment, aes(factor(unemployment$Month, levels = month.name), Number, fill=gender)) + geom_boxplot() +
+  labs(x = "Month", y = "Number Unemployed citizens", title = "Distribution of Unemployed citizens within each month over all years") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + theme(plot.title = element_text(size=10))
+```
+```{r, echo=FALSE, warning=FALSE}
+summer_months <- c("May", "June", "July", "August", "September")
+unemployment[, summer_month:=Month %in% summer_months]
+unemployment_summer <- unemployment[, .(number_unemployed=sum(Number)), by=c("summer_month", "year", "Month")]
+```
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment_summer, aes(summer_month, number_unemployed)) + geom_boxplot() + labs(x = "Summer Month", y = "Number Unemployed citizens", title = "3. Number of Unemployed People from 2013-2017 against summer months")+
+  facet_wrap(~year) + scale_y_continuous(labels = scales::comma) + theme(plot.title = element_text(size=10))
+```
+
+We see that the number of unemployed people decreases over the summer months in each year. This is probably because of seasonal effects e.g.: construction industry, tourism. 
+
+To underline the result we can now test with a t test (one binary, one continuous variable)
+→ p_value of 3% - 2017. The p-value of 2017  is definitely underlying our hypothesis.
+→ p.value # 21% p_value - 2016. The p-value of 2016 might be an outlier year.
+
+
+We see that when we aggregate the number of unemployed citizens among all districts/ neighborhoods, seasonal effects can be seen. From the plot we might conclude that the differences from the median are quite high. 
+But as we have learned in the lecture, we need to be careful before making any conclusions. The pattern might be an artifact of random variation and might disappear if we had more data.
+For that we are doing a statistical permutation test, meaning we consider the possibility that the difference in medians could often arise by chance. We are randomly assigning months to a row, grouped by the year to infer from the plot that the number of unemployed citizens is slowly going down over the years (only one exception in 2015 can be observed).
+
+```{r, include=FALSE, warning=FALSE}
+t_stat_for_specific_year <- function(test_year){
+  year_data <- unemployment_summer[year==test_year]
+  t_statistic <- t.test(number_unemployed ~ summer_month, data=year_data)
+  t_statistic
+}
+```
+```{r, include=FALSE, warning=FALSE}
+t_stat_for_specific_year(2017)
+```
+```{r, include=FALSE, warning=FALSE}
+t_stat_for_specific_year(2016)
+```
+```{r, echo=FALSE, warning=FALSE}
+N_permu = 1000
+median_diff_summer <- function(dt){
+  dt[, summer_month:=Month %in% summer_months]
+  dt[summer_month==F, median(number_unemployed, na.rm=T)] -
+  dt[summer_month==T, median(number_unemployed, na.rm=T)] 
+    
+}
+
+T_obs <- median_diff_summer(unemployment_summer)
+
+
+T_star <- sapply(1:N_permu, function(x){
+  median_diff_summer(unemployment_summer[, Month := sample(Month), by=year]) })
+```
+```{r, echo=FALSE, warning=FALSE}
+
+ggplot(data.table(T_star = T_star), aes(T_star)) + geom_histogram(bins=30) +
+  geom_vline(aes(xintercept=T_obs, color="T_ref")) + labs(title="4. Permutation Test on Summer months, metric: difference in medians") + xlim(-15000,15000) + theme(plot.title = element_text(size=10))
+```
+
+There is a possibility that the observed “event” occured by chance (also indicated by the p value). However, the result underlines that there could exist some kind of seasonal effects. We have just observed a few differences in the medians bigger than the original one (T_ref).
+
+## Data Preparation 2
+```{r, include=FALSE, warning=FALSE}
+population <- population[, .(number_citizens=sum(Number)), by=c("district_code", "age", "year", "gender")]
+```
+```{r, include=FALSE, warning=FALSE}
+population_total <- population[, .(number_citizens_total = sum(number_citizens)), by=c( "year", "district_code", "gender")]
+```
+```{r, include=FALSE, warning=FALSE}
+population_workers <- population[age %in% c("15-19", "20-24", "25-29", "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-64")]
+population_workers <- population_workers[, .(number_workers_total = sum(number_citizens)), by=c("year", "district_code", "gender")]
+```
+```{r, include=FALSE, warning=FALSE}
+population_youth <- population[age %in% c("15-19", "20-24", "25-29"), .(number_citizens_youth = sum(number_citizens)), by = c("year", "district_code", "gender")]
+
+```
+```{r, include=FALSE, warning=FALSE}
+immigrants <- immigrants[nationality!="Spain", .(number_immigrants=sum(Number)), by=c("district_code", "year")]
+
+```
+```{r, include=FALSE, warning=FALSE}
+immigrants_sex <- immigrants_sex[, .(number_immigrants=sum(Immigrants)), by=c("district_code", "year", "gender")]
+
+```
+```{r, include=FALSE, warning=FALSE}
+unemployment <- unemployment[Demand_occupation=="Registered unemployed", .(number_unemployed=mean(Number)), by=c("year", "district_code", "gender")]
+
+```
+```{r, include=FALSE, warning=FALSE}
+births <- births[, .(number_births=sum(Number)), by=c("district_code", "year", "gender")]
+
+```
+```{r, include=FALSE, warning=FALSE}
+# Replace values for joins
+births[gender=="Boys", "gender"] <- "Male"
+births[gender=="Girls", "gender"] <- "Female"
+```
+```{r, include=FALSE, warning=FALSE}
+unemployment <- merge(unemployment, population_total, by=c("district_code", "year", "gender"), all.x=T)
+unemployment <- merge(unemployment, population_workers, by=c("district_code", "year", "gender"), all.x=T)
+unemployment <- merge(unemployment, population_youth, by=c("district_code", "year", "gender"), all.x=T)
+unemployment <- merge(unemployment, births, by=c("district_code", "year", "gender"), all.x=T)
+unemployment <- merge(unemployment, immigrants_sex, by = c("district_code", "year", "gender"), all.x = T)
+
+
+```
+```{r, include=FALSE, warning=FALSE}
+unemployment[, rate_unemployed:=number_unemployed/number_workers_total]
+unemployment[, share_youth:=number_citizens_youth/number_workers_total]
+unemployment[, share_immigrants:=number_immigrants/number_citizens_total]
+
+```
+As a preparation for our next analysis, we aggregated the population by year, district and gender to gain direct information on the distribution between the individual age groups. To achieve this data basis we have first calculated the total number of immigrants/youth via the total number of citizens. We define all citizens in the age groups 15 - 64 as potential workers and citizens between 15- 29 as youth citizens. The total number of immigrants is aggregated by all immigrants except Spanish, as they may have come for studying etc.
+By merging all data we now have added some additional information to the unemployment data set with the rate_unemployed (unemployed/ total workers), the share_youth (youth citizens/total workers) and share_immigrants (immigrants/number citizens).
+Let us now dig deeper into the different information we have now gained and investigate if there are co-founding factors for the unemployment. In comparison to the plots in the beginning, let us put the number of unemployed people per district/ gender into proportion of number of citizens per district/ gender.
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment, aes(factor(district_code), rate_unemployed, fill=gender)) + geom_boxplot() +
+  labs(x = "District Code", y=" Rate unemployed", title="5. Rate of unemployed people per district code and gender" ) + theme(plot.title = element_text(size=10))
+```
+As we can now see e.g. district 2 doesn't has such a high unemployment rate, but from the first plot one could have falsley inferred that the rate might also be high due to the total number of unemployed citizens. 
+
+```{r, include=FALSE, warning=FALSE}
+#Initially, this plot could be interpreted as an indication that with an increasing number of births among births/immigrants/youth the number of unemployed citizens also rises.  
+ggplot(unemployment, aes(number_births, number_unemployed)) + geom_point() + geom_smooth(method="lm")
+ggplot(unemployment, aes(number_immigrants, number_unemployed)) + geom_point() + geom_smooth(method="lm")
+ggplot(unemployment, aes(number_citizens_youth, number_unemployed)) + geom_point() + geom_smooth(method="lm")
+```
+Next, we will check if the rate of unemployed citizens and the share of youth/immigrants correlate. We achieve this by testing these statistics in relation to the total number of citizens within the separate districts. On the left plot we see that the number of young perople correlates strongly with the number of unemployed citizens. But this is clear, what is a cofounding factor for it? Obviously the number of citizens. Let us rather take the rate of unemplyoment and the share of young citizens instead of the total numbers. The same holds for number of immigrants.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+share_youth_plot_1 <- ggplot(unemployment, aes(number_citizens_youth, number_unemployed)) + geom_point() + geom_smooth(method="lm") + labs(x="Number of Young citizens", y = "Number of unemployed Citizens", title = "6. Correlation of Number of young citizens/ unemployed citizens") + theme(plot.title = element_text(size=10))
+
+
+share_youth_plot <- ggplot(unemployment, aes(share_youth, rate_unemployed)) + geom_point() + labs( x= "Share youth", y= "Rate unemployed", title= "7. Correlation of rate of unemployment with share of youth")+
+geom_smooth(method="lm") + theme(plot.title = element_text(size=10))
+
+
+
+immigrants_plot_1 <- ggplot(unemployment, aes(number_immigrants, number_unemployed)) + geom_point() + geom_smooth(method="lm") + labs(x="Number of Immigrants", y = "Number of unemployed Citizens", title = "8. Correlation of Number of Immigrants/ unemployed citizens") + theme(plot.title = element_text(size=10))
+
+immigrants_plot <- ggplot(unemployment, aes(share_immigrants, rate_unemployed)) + geom_point() + labs( x= "Share immigrants", y= "Rate unemployed", title= "9. Correlation of rate of unemployment with share of immigrants")+ geom_smooth(method="lm") + theme(plot.title = element_text(size=10))
+```
+
+
+
+
+```{r}
+suppressWarnings(print(share_youth_plot_1))
+suppressWarnings(print(share_youth_plot))
+```
+
+
+```{r, test1, fig.show="hold", out.width="50%"}
+suppressWarnings(print(immigrants_plot_1))
+suppressWarnings(print(immigrants_plot))
+```
+
+
+We see that the share of youth within all districts does actually not correlate with unemployment rate: Districts with a high share of immigrants do not necessarily have a high unemployment rate, there might be a weak correlation. Let us test this with a Spearman test to clarify if the two continuous variables correlate. The first rho is the statistic for the correlation between share of youth and rate of unemployment, the second one for the share of immigrants. Both are negative, thus we conclude they definitley do not correlate.
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(unemployment$share_youth, unemployment$rate_unemployed, method="spearman", exact=FALSE)$estimate
+cor.test(unemployment$share_immigrants, unemployment$rate_unemployed, method="spearman", exact=FALSE)$estimate
+```
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+cor.test(unemployment$number_births, unemployment$rate_unemployed, method="spearman", exact=FALSE)
+
+```
+We conclude that the share of immigrants as well as the share of young people within the population does not correlate with a high unemployment rate. 
+For Gender we will use a t-test, as we have one boolean (Male=True, Female=False) and one continious variable (number of unemployed citizens):
+```{r, echo=FALSE, warning=FALSE}
+unemployment[, male_indicator:=gender=="Male"]
+t_statistic <- t.test(number_unemployed ~ gender, data=unemployment)
+t_statistic$p.value 
+```
+The p value is at 55%, which is quite high and indicates that gender is not really associated with unemployment. 
+To summarize, summer months are a cofounding factor for unemployment but the share of immigrants as well as share of young people within district are not. We always also have to compare all numbers (such as number of young people, number of unemployed people) to the total numbers in a district to remove all cofounding factors. 
+
+As we have focused a lot on differences in gender groups we want to finish the case study by a quick statistical test. The statistically supported hypothesis should be that women have a higher life expectancy than men in Barcelona.
+
+```{r, echo=FALSE, warning=FALSE}
+life_expect <- melt(life_expect, id.vars = c("Neighborhood", "Gender"), variable.name = "year", value.name = "life_expectancy")
+```
+
+
+The demonstrative plot 8 shows that a difference in the life expectancy of females and male exists. In general females live longer than men. But the question arises whether the difference arose by any chance. 
+For this we run a Permutation test. Plot 9 shows the clear result underlying our hypothesis.
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+#Let us make some tests
+#For that we calculate the medians of both groups and their difference (= T_ref):
+#First of all we define a function, which calculates the difference in medians:
+
+median_diff <- function(dt){
+  dt[Gender=="Female", median(life_expectancy, na.rm=T)] -
+    dt[Gender=="Male", median(life_expectancy, na.rm=T)]
+}
+
+T_ref <- median_diff(life_expect)
+#Now lets permute the data for n=1000
+life_expect_copy <- copy(life_expect)
+p1 <- ggplot(life_expect_copy, aes(Gender, life_expectancy)) + geom_boxplot()+labs(x="gender", y="Life expectancy", title="10. Life expectancy per gender"
+) + theme(plot.title = element_text(size=10))
+
+N_permu = 1000
+T_star <- sapply(1:N_permu, function(x){
+  median_diff(life_expect[, Gender := sample(Gender)]) })
+#Lets plot our result
+
+
+p2 <- ggplot(data.table(T_star = T_star), aes(T_star)) + geom_histogram(bins=30) +
+  geom_vline(aes(xintercept=T_ref, color="T_ref")) + labs(title = "11. Difference in medians after repeating permutation 1000 times") + theme(plot.title = element_text(size=10))
+```
+
+```{r, figures-side, fig.show="hold", out.width="50%", results='hide', message=FALSE}
+suppressWarnings(print(p1))
+suppressWarnings(print(p2))
+```
+
+
+After conducting the permutation test we can conclude that the life expectancy of women is higher than of men as we have not observed a difference equal or larger than the original one among 1000 permutations.
+
+## Conclusion
+The general ideas about issues surrounding increased unemployment among residents in Spain, and especially hotspots such as Barcelona, may well be revealed by analyzing the available data set. 
+In addition, we statistically showed that there is an influence of the respective season, e.g. summer months, in the number of unemployed citizens which we have seen in the demonstrative plot number 3. In fact the season is also a co-founding factor of unemployment. 
+Thus,the problem of unemployment intensifies especially in the winter months, because then probably short-term jobs from e.g. the tourism and construction industry are not available.
+The gender of the persons concerned is not a decisive factor for unemployment. Women and men are therefore at virtually the same risk of unemployment.  \
+The potential stereotype of unemployed immigrants cannot be substantiated by our analysis either. Due to the data we could just show that in districts with an increasing share of immigrants, the unemployment rate is not increasing.
+Summarizing we have also investigated different co-founding factors for unemployment, namely the number of immigrants or the share of youth within a district and have also tested statistical whether they influence the unemployment rate. 
+In addition, we conclude based on a statistical permutation test that the life expectancy of women is higher than that of men.
+```{r, echo=FALSE, warning=FALSE}
+tinytex::install_tinytex()
+```
