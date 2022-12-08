@@ -44,6 +44,7 @@ immigrants_sex = rename(immigrants_sex, "year"="Year", "gender"="Gender", "distr
 
 # Set all figures to a global size
 knitr::opts_chunk$set(fig.width=6, fig.height=2.4) 
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 ```
 ## Data Analysis
 ```{r, include=FALSE, warning=FALSE}
@@ -99,6 +100,7 @@ ggplot(unemployment, aes(factor(unemployment$Month, levels = month.name), Number
   labs(x = "Month", y = "Number Unemployed citizens", title = "Distribution of Unemployed citizens within each month over all years") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + theme(plot.title = element_text(size=10))
 ```
+
 ```{r, echo=FALSE, warning=FALSE}
 summer_months <- c("May", "June", "July", "August", "September")
 unemployment[, summer_month:=Month %in% summer_months]
@@ -223,42 +225,40 @@ ggplot(unemployment, aes(number_births, number_unemployed)) + geom_point() + geo
 ggplot(unemployment, aes(number_immigrants, number_unemployed)) + geom_point() + geom_smooth(method="lm")
 ggplot(unemployment, aes(number_citizens_youth, number_unemployed)) + geom_point() + geom_smooth(method="lm")
 ```
-Next, we will check if the rate of unemployed citizens and the share of youth/immigrants correlate. We achieve this by testing these statistics in relation to the total number of citizens within the separate districts. On the left plot we see that the number of young perople correlates strongly with the number of unemployed citizens. But this is clear, what is a cofounding factor for it? Obviously the number of citizens. Let us rather take the rate of unemplyoment and the share of young citizens instead of the total numbers. The same holds for number of immigrants.
-
-```{r, echo=FALSE, warning=FALSE, message=FALSE}
-share_youth_plot_1 <- ggplot(unemployment, aes(number_citizens_youth, number_unemployed)) + geom_point() + geom_smooth(method="lm") + labs(x="Number of Young citizens", y = "Number of unemployed Citizens", title = "6. Correlation of Number of young citizens/ unemployed citizens") + theme(plot.title = element_text(size=10))
+Next, we will check if the rate of unemployed citizens and the share of youth/immigrants correlate. We achieve this by testing these statistics in relation to the total number of citizens within the separate districts. On the plot Nr. 6 we see that the number of young perople correlates strongly with the number of unemployed citizens. But as this is an obvious conclusion, we will now check for a possbible cofounding factor, the number of citizens. Let us rather take the rate of unemplyoment and the share of young citizens instead of the total numbers. The same holds for number of immigrants.
 
 
-share_youth_plot <- ggplot(unemployment, aes(share_youth, rate_unemployed)) + geom_point() + labs( x= "Share youth", y= "Rate unemployed", title= "7. Correlation of rate of unemployment with share of youth")+
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment, aes(number_citizens_youth, number_unemployed)) + geom_point() + geom_smooth(method="lm") + labs(x="Number of Young citizens", y = "Number of unemployed Citizens", title = "6. Correlation of Number of young citizens/ unemployed citizens") + theme(plot.title = element_text(size=10))
+```
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment, aes(share_youth, rate_unemployed)) + geom_point() + labs( x= "Share youth", y= "Rate unemployed", title= "7. Correlation of rate of unemployment with share of youth")+
 geom_smooth(method="lm") + theme(plot.title = element_text(size=10))
-
-
-
-immigrants_plot_1 <- ggplot(unemployment, aes(number_immigrants, number_unemployed)) + geom_point() + geom_smooth(method="lm") + labs(x="Number of Immigrants", y = "Number of unemployed Citizens", title = "8. Correlation of Number of Immigrants/ unemployed citizens") + theme(plot.title = element_text(size=10))
-
-immigrants_plot <- ggplot(unemployment, aes(share_immigrants, rate_unemployed)) + geom_point() + labs( x= "Share immigrants", y= "Rate unemployed", title= "9. Correlation of rate of unemployment with share of immigrants")+ geom_smooth(method="lm") + theme(plot.title = element_text(size=10))
 ```
 
 
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment, aes(number_immigrants, number_unemployed)) + geom_point() + geom_smooth(method="lm") + labs(x="Number of Immigrants", y = "Number of unemployed Citizens", title = "8. Correlation of Number of Immigrants/ unemployed citizens") + theme(plot.title = element_text(size=10))
+```
 
-
-```{r}
-suppressWarnings(print(share_youth_plot_1))
-suppressWarnings(print(share_youth_plot))
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment, aes(share_immigrants, rate_unemployed)) + geom_point() + labs( x= "Share immigrants", y= "Rate unemployed", title= "9. Correlation of rate of unemployment with share of immigrants")+ geom_smooth(method="lm") + theme(plot.title = element_text(size=10))
 ```
 
 
-```{r, test1, fig.show="hold", out.width="50%"}
-suppressWarnings(print(immigrants_plot_1))
-suppressWarnings(print(immigrants_plot))
-```
 
 
 We see that the share of youth within all districts does actually not correlate with unemployment rate: Districts with a high share of immigrants do not necessarily have a high unemployment rate, there might be a weak correlation. Let us test this with a Spearman test to clarify if the two continuous variables correlate. The first rho is the statistic for the correlation between share of youth and rate of unemployment, the second one for the share of immigrants. Both are negative, thus we conclude they definitley do not correlate.
+
+
+
 ```{r, echo=FALSE, warning=FALSE, message=FALSE}
 cor.test(unemployment$share_youth, unemployment$rate_unemployed, method="spearman", exact=FALSE)$estimate
 cor.test(unemployment$share_immigrants, unemployment$rate_unemployed, method="spearman", exact=FALSE)$estimate
 ```
+
 ```{r, include=FALSE, warning=FALSE, message=FALSE}
 cor.test(unemployment$number_births, unemployment$rate_unemployed, method="spearman", exact=FALSE)
 
@@ -273,6 +273,53 @@ t_statistic$p.value
 The p value is at 55%, which is quite high and indicates that gender is not really associated with unemployment. 
 To summarize, summer months are a cofounding factor for unemployment but the share of immigrants as well as share of young people within district are not. We always also have to compare all numbers (such as number of young people, number of unemployed people) to the total numbers in a district to remove all cofounding factors. 
 
+
+
+
+
+I will now quickly add some basic Linear Regression Model to predict the number of unemployed citizens given the total number of citizens. We are using following formula (explanatory and response variables):
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+###
+# drop na for linear reg
+unemployment <- unemployment[!is.na(number_citizens_total),]
+
+lin_formula <- as.formula("number_unemployed ~ number_citizens_total + number_workers_total + number_citizens_youth + number_immigrants")
+```
+
+```{r, echo=FALSE, warning=FALSE}
+lin_formula
+```
+
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+linear_reg <- lm(lin_formula, data = unemployment)
+
+
+unemployment[, predict_lin_reg := predict(linear_reg, newdata = unemployment)]
+unemployment[, residuals := number_unemployed-predict_lin_reg]
+
+```
+
+From the Plot 10 we conclude that the average of the residuals doesn't seem to change across predicted values. Therefore the residual vs predicted values plot doesn't provide evidence against the linearity assumption, namely that the expected values of the response are a linear combinations of the
+explanatory variables.
+
+Also, the variance of the residuals seems to be constant across predicted values.
+Together with the previous observation, such supports that the errors are identically and independently distributed.
+An implication that the errors follow a Gaussian distribution is that the residuals also follow a Gaussian distribution. The Q-Q plot (Nr. 11) supports such distribution.
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment, aes(predict_lin_reg, residuals)) + geom_point() + labs( x= "Prediction", y= "Residuals", title= "10. Prediction-Resdiual Plot for linear regression Model")+ theme(plot.title = element_text(size=10)) + geom_hline(yintercept = 0)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(unemployment, aes(sample = residuals)) + geom_qq() + geom_qq_line() + labs( title= "11. QQ-Plot of Residuals")+ theme(plot.title = element_text(size=10))
+```
+
+
+
+
+
 As we have focused a lot on differences in gender groups we want to finish the case study by a quick statistical test. The statistically supported hypothesis should be that women have a higher life expectancy than men in Barcelona.
 
 ```{r, echo=FALSE, warning=FALSE}
@@ -280,8 +327,8 @@ life_expect <- melt(life_expect, id.vars = c("Neighborhood", "Gender"), variable
 ```
 
 
-The demonstrative plot 8 shows that a difference in the life expectancy of females and male exists. In general females live longer than men. But the question arises whether the difference arose by any chance. 
-For this we run a Permutation test. Plot 9 shows the clear result underlying our hypothesis.
+The demonstrative plot 12 shows that a difference in the life expectancy of females and male exists. In general females live longer than men. But the question arises whether the difference arose by any chance. 
+For this we run a Permutation test. Plot 13 shows the clear result underlying our hypothesis.
 
 ```{r, include=FALSE, warning=FALSE, message=FALSE}
 #Let us make some tests
@@ -296,8 +343,8 @@ median_diff <- function(dt){
 T_ref <- median_diff(life_expect)
 #Now lets permute the data for n=1000
 life_expect_copy <- copy(life_expect)
-p1 <- ggplot(life_expect_copy, aes(Gender, life_expectancy)) + geom_boxplot()+labs(x="gender", y="Life expectancy", title="10. Life expectancy per gender"
-) + theme(plot.title = element_text(size=10))
+
+
 
 N_permu = 1000
 T_star <- sapply(1:N_permu, function(x){
@@ -305,14 +352,18 @@ T_star <- sapply(1:N_permu, function(x){
 #Lets plot our result
 
 
-p2 <- ggplot(data.table(T_star = T_star), aes(T_star)) + geom_histogram(bins=30) +
-  geom_vline(aes(xintercept=T_ref, color="T_ref")) + labs(title = "11. Difference in medians after repeating permutation 1000 times") + theme(plot.title = element_text(size=10))
 ```
 
-```{r, figures-side, fig.show="hold", out.width="50%", results='hide', message=FALSE}
-suppressWarnings(print(p1))
-suppressWarnings(print(p2))
+```{r, echo=FALSE, warning=FALSE}
+ggplot(life_expect_copy, aes(Gender, life_expectancy)) + geom_boxplot()+labs(x="gender", y="Life expectancy", title="12. Life expectancy per gender"
+) + theme(plot.title = element_text(size=10))
 ```
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(data.table(T_star = T_star), aes(T_star)) + geom_histogram(bins=30) +
+  geom_vline(aes(xintercept=T_ref, color="T_ref")) + labs(title = "13. Difference in medians after repeating permutation 1000 times") + theme(plot.title = element_text(size=10))
+```
+
 
 
 After conducting the permutation test we can conclude that the life expectancy of women is higher than of men as we have not observed a difference equal or larger than the original one among 1000 permutations.
@@ -325,6 +376,3 @@ The gender of the persons concerned is not a decisive factor for unemployment. W
 The potential stereotype of unemployed immigrants cannot be substantiated by our analysis either. Due to the data we could just show that in districts with an increasing share of immigrants, the unemployment rate is not increasing.
 Summarizing we have also investigated different co-founding factors for unemployment, namely the number of immigrants or the share of youth within a district and have also tested statistical whether they influence the unemployment rate. 
 In addition, we conclude based on a statistical permutation test that the life expectancy of women is higher than that of men.
-```{r, echo=FALSE, warning=FALSE}
-tinytex::install_tinytex()
-```
